@@ -38,14 +38,14 @@ def generate_sed(wavelengths, mag, spec_type='bb5500'):
         bb = models.BlackBody(temperature=temp, scale=1*u.J*u.m**-2/u.s/u.micron/u.sr)
         norm_factor = (3.63e-9*u.erg/u.cm**2/u.s/u.Angstrom) / (bb(5500 * u.Angstrom) * u.sr) * 10**(-0.4 * mag)
         energy = const.c * const.h / wavelengths
-        sed = bb(wavelengths) * norm_factor / energy
+        sed = bb(wavelengths) * norm_factor * u.sr / energy
     else:
         print('Spectral type currently unsupported. Null value returned.')
 
     return sed
 
 
-def atmos_transmission(wavelengths, model='flat0.5'):
+def atmos_transmission(wavelengths, model='flat0.8'):
     """Generates the atmospheric transmission curve
 
         Calculates the transmission curve of the atmosphere based on the model entered.
@@ -71,7 +71,7 @@ def atmos_transmission(wavelengths, model='flat0.5'):
     return transmission
 
 
-def instrument_transmission(wavelengths, model='flat0.8'):
+def instrument_transmission(wavelengths, model='flat0.5'):
     """Generates the instrumental transmission curve
 
         Calculates the transmission curve of the instrument based on the model entered.
@@ -172,13 +172,23 @@ def calc_monochrome_signal(sed, transmission, area=(np.pi*(3.5/2*u.m)**2), exp_t
                       at each wavelength
 
     """
-    monochrome_signal = (area * exp_time * sed * transmission).decompose()
+    monochrome_signal = (area * exp_time * sed * transmission).to(1/u.Angstrom)
 
     return monochrome_signal
 
 
 def main():
-    pass
+    wavelengths = 5500 * u.Angstrom
+    V_mag = 20
+    atmos_trans = atmos_transmission(wavelengths)
+    filter_trans = filter_transmission(wavelengths)
+    instrument_trans = instrument_transmission(wavelengths)
+    transmission = atmos_trans * filter_trans * instrument_trans
+    area = tele_area(name='rad0.3')
+    photon_sed = generate_sed(wavelengths, V_mag)
+    signal = calc_monochrome_signal(photon_sed, transmission, area=area, exp_time=(1*u.s))
+    print(signal)
+    print(signal*850*u.Angstrom)
 
 
 if __name__ == "__main__":
