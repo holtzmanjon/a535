@@ -271,12 +271,28 @@ class Counts_Equation:
     
     
 class Signal_to_Noise:
+    '''
+    Class for calculating needed exposure time for observation
     
+    INPUTS: 
+        Counts_Equation, class with all observing factors used to calculate signal
+        SNR: desired SNR
+    '''
     def __init__(self,Counts_Equation,SNR):
         self.counts = Counts_Equation.get_counts()
         self.SNR = SNR
         
     def calc_exptime(self,plot=False):
+        '''
+        Calculates needed exposure time for desired SNR
+        INPUTS:
+            plot: to plot or not to plot SNR as function of time
+        RETURNS:
+            time: time in seconds to reach desired SNR
+        NOTES:
+            currently only factors in counts uncertainty
+        
+        '''
         def snr_eq(t):
             return (self.counts*t)/np.sqrt(self.counts*t)-self.SNR 
         roots = fsolve(snr_eq, 0.1)
