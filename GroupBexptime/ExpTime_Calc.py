@@ -160,14 +160,20 @@ class Telescope:
         
             
     '''
-    def __init__(self,diameter,units):
-        if units == 'cm':
+    def __init__(self,diameter,diameter_units,focal_length,foc_len_units):
+        if diameter_units == 'cm':
             self.diameter = diameter*u.cm
-        if units == 'm':
-            self.diameter = diameter*u.m.to(u.cm)*u.cm
-        if units == 'mm':
-            self.diameter = diameter*u.mm.to(u.cm)*u.cm
-    
+        if foc_len_units == 'cm':
+            self.focal_length = focal_length*u.cm
+        if diameter_units == 'mm':
+            self.diameter = diameter*u.mm
+        if foc_len_units == 'mm':
+            self.focal_length = focal_length*u.mm
+        if diameter_units == 'm':
+            self.diameter = diameter*u.m
+        if foc_len_units == 'm':
+            self.focal_length = focal_length*u.m
+            
     def calc_area(self):    
         area = np.pi*(self.diameter/2)**2
         return area
@@ -184,16 +190,18 @@ class atmosphere:
         
     INPUTS:
         quality: 'default' reads in sky.csv and uses those parameters
+        seeing: value in arcsec
     '''
     
-    def __init__(self,quality):
+    def __init__(self,quality,seeing):
         if quality=='default':
             sky_table = pd.read_csv(notebook_directory+'/sky_data/sky.csv')
             self.lam = sky_table['lam']*u.nm.to(u.AA)
             self.flux = (np.array(sky_table['flux'])*u.photon/u.m**2/u.s/u.micron/
                          u.arcsec**2).to(u.photon/u.cm**2/u.s/u.AA/u.arcsec**2)
             self.trans = sky_table['trans']
-    
+            self.seeing = seeing*u.arcsec
+            
     def absorption(self,wavelength,spectrum):
         '''
         multiply spectrum times absorption of atmosphere
@@ -216,17 +224,19 @@ class atmosphere:
     
 class detector:
     def __init__(self,camera_cost):
-        self.camera_cost = camera_cost
-
-    def detector_efficiency(self):   
-    
+        self.camera_cost = camera_cost  
         if self.camera_cost == '$$$':
-            QE = 0.5
+            self.QE = 0.5
+            self.resolution = np.array([1000,1000]) #pixels
+            self.px_size = 9*u.micron
+            self.read_noise = 5 #e/px
         if self.camera_cost == '$':
-            QE = 0.08
-        return QE
-    
-class Counts_Equation:
+            self.QE = 0.08
+            self.resolution = np.array([500,500])
+            self.px_size = 15*u.micron
+            self.read_noise = 20 #e/px
+            
+class Observation:
     '''
     PURPOSE:
         Creates a class representing observing conditions
@@ -245,12 +255,20 @@ class Counts_Equation:
         self.atmosphere = atmosphere
         self.area = telescope.calc_area()
         self.mirror = telescope.mirror()
-        self.QE = detector.detector_efficiency()
-        
+        self.detector = detector
+        self.QE = detector.QE
+        self.seeing = atmosphere.seeing
         self.filtered_spectrum = self.bandpass.filter_SED(self.wavelength, self.photon_spectrum)
         self.absorbed_spectrum = self.atmosphere.absorption(self.wavelength,self.filtered_spectrum)
         
+        self.px_scale = np.arctan(detector.px_size.to(u.mm)
+                               /telescope.focal_length.to(u.mm)).to(u.arcsec)**2 #arcsecond^2 per pixel
 
+        self.N_px = (np.pi*self.seeing**2)/self.px_scale
+
+        
+        self.filtered_skyglow = self.bandpass.filter_SED(atmosphere.lam, atmosphere.flux)*u.arcsec**2/self.px_scale*self.N_px*self.area
+        self.total_skyglow = simps(self.filtered_skyglow, atmosphere.lam) #photons per second
         
     def get_counts(self):
         '''
@@ -281,6 +299,9 @@ class Signal_to_Noise:
     def __init__(self,Counts_Equation,SNR):
         self.counts = Counts_Equation.get_counts()
         self.SNR = SNR
+        self.skyglow = Counts_Equation.total_skyglow
+        self.N_px = Counts_Equation.N_px
+        self.sigma_rn = Counts_Equation.detector.read_noise
         
     def calc_exptime(self,plot=False):
         '''
@@ -294,7 +315,7 @@ class Signal_to_Noise:
         
         '''
         def snr_eq(t):
-            return (self.counts*t)/np.sqrt(self.counts*t)-self.SNR 
+            return (self.counts*t)/np.sqrt(self.counts*t+self.skyglow*t+self.N_px*self.sigma_rn**2)-self.SNR 
         roots = fsolve(snr_eq, 0.1)
         time = roots[0]
         print(' ')
