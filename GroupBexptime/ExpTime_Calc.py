@@ -1,12 +1,18 @@
-
-
 import astropy.units as u
 import astropy.constants as c
 from astropy.modeling.physical_models import BlackBody
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import simps,trapz
+from scipy.interpolate import interp1d
+from scipy.optimize import fsolve
 import warnings
+import pandas as pd
+import glob
+import sys
+import os
+notebook_directory = os.getcwd()
+sys.path.append(notebook_directory)
 
 class SED:
     '''
@@ -16,30 +22,13 @@ class SED:
     INPUTS:
         mag: magnitude of source
         temperature: temperature of source
-        temp_units: units of temperature, 'Kelvin' is supported
-        wave_start: starting wavelength of spectrum
-        wave_end: ending wavelength of spectrum
-        wave_units: units of wavelength "Angstrom" is supported
     '''
     # Initialize the class
-    def __init__(self, mag, temperature, temp_units, wave_start, wave_stop, wave_units):
+    def __init__(self, mag, temperature):
   
         # Define variables
         self.mag = mag
-        self.temperature = temperature
-
-        # Define the units of temperature
-        if temp_units == 'Kelvin':
-            self.temperature = self.temperature*u.K
-
-        # Define the wavelength range
-        self.wave_start = wave_start
-        self.wave_stop = wave_stop
-
-        # Define the units of wavelength
-        if wave_units == "Angstrom":
-            self.wave_start = self.wave_start*u.AA
-            self.wave_stop = self.wave_stop*u.AA
+        self.temperature = temperature*u.K
 
     def blackbody_spectrum(self):
 
@@ -50,8 +39,6 @@ class SED:
         INPUTS:
                         [mag; float]: The magnitude of the star
                 [temperature; float]: The temperature of the star
-                 [wave_start; float]: The starting wavelength of the spectrum
-                  [wave_stop; float]: The ending wavelength of the spectrum
 
         OUTPUTS:
                           [wavelength; np.array, float]: The wavelength array of the blackbody spectrum
@@ -65,7 +52,7 @@ class SED:
         blackbody_model = BlackBody(self.temperature, scale = 1*u.erg/u.s/u.cm**2/u.sr/u.AA)
 
         # Normalize the spectrum
-        self.wavelength = np.linspace(self.wave_start, self.wave_stop, 100_000)
+        self.wavelength = np.linspace(1, 15000, 100000)
 
         # Define the reference spectrum
         self.model_spectrum = blackbody_model(self.wavelength)
@@ -81,7 +68,7 @@ class SED:
         
         return self.wavelength, self.normalized_spectrum
     
-    def photon_spectrum(self):
+    def photon_spectrum(self,plot=False):
         '''
         PURPOSE:
             Create a photon spectrum
@@ -90,76 +77,42 @@ class SED:
         OUTPUTS:
             photon_spectrum, an array in units of photons per second per cm^2 per Angstrom
         '''
+                
         with warnings.catch_warnings():            
             warnings.filterwarnings("ignore", category=RuntimeWarning)          
             wavelength,normalized_spectrum = SED.blackbody_spectrum(self)       
             light_speed = c.c.to(u.cm/u.s)
             h = c.h.to(u.erg*u.s)
-            photon_spectrum = normalized_spectrum*(5500*u.AA.to(u.cm)*u.cm)/(h*light_speed)
-
-        return wavelength,photon_spectrum
-    
-    def plot(self, plot):
-
-        '''
-        PURPOSE:
-                This function plots the blackbody spectrum.
-
-        INPUTS:
-                [plot; string:  Type of plot
-
-        OUTPUTS:
-                Displays a plot of the blackbody spectrum.
-
-        AUTHOR:
-                Tim M. Sept. 1 2023.
-        '''
-
-        # Create normalized spectrum 
-        if plot=='Flux Density':
+            photon_spectrum = normalized_spectrum*(wavelength*u.AA.to(u.cm)*u.cm)/(h*light_speed)
         
-            wavelength, spectrum = SED.blackbody_spectrum(self)
-            fig,ax = plt.subplots(1, 1, figsize = (10, 8))
-            ax.set_xlabel('Wavelength ($\AA$)')
-            ax.set_ylabel('Flux Density (ergs $s^{-1} cm^{-2} \AA^{-1}$)')
-            ax.plot(wavelength, spectrum)
-            plt.show()
-        
-        if plot=='Photon Flux':
-            wavelength, spectrum = SED.photon_spectrum(self)
+        # Create spectrum plot
+        if plot==True:
             fig,ax = plt.subplots(1, 1, figsize = (10, 8))
             ax.set_xlabel('Wavelength ($\AA$)')
             ax.set_ylabel('Flux Density (photons $s^{-1} cm^{-2} \AA^{1})$')
-            ax.plot(wavelength, spectrum)
+            ax.plot(wavelength, photon_spectrum)
             plt.show()
         
-        return 
-        
+        return wavelength,photon_spectrum
+    
 class BandPass:
     '''
     PURPOSE: Create a class for bandpass
     
     INPUTS:
-        filter: filter used for observation, 'V' is supported and creates a square filter centered on 5500 Angstroms
+        filter: filter used for observation, supported filter inputs are 'B','V','R','I'
     '''
     # Initialize the bandpass class
     def __init__(self, filter):
 
+        # For the Johnson filter system:
+        filter_table = pd.read_csv(notebook_directory+'/filter_data/'+filter+'.dat',delimiter='\t')
 
-        # For the Johnson V filter
-        if filter == 'V':
+        self.filter_wavelength = filter_table['wavelength']
 
-            # Define the wavelength range
-            self.filter_wavelength = np.arange(0, 10_000)
-
-            # Make the filter array of zeros
-            self.filter = np.zeros(len(self.filter_wavelength))
-
-            # Make a boxy filter response
-            index = np.where((self.filter_wavelength > 5075) & (self.filter_wavelength < 5925))
-            self.filter[index] = 0.8
+        self.filter_transmission = filter_table['transmission']
             
-    def convolve_SED(self, wavelength, normalized_spectrum):
+    def filter_SED(self, wavelength, normalized_spectrum,plot=False):
 
         ''' 
         PURPOSE:
@@ -177,12 +130,25 @@ class BandPass:
         '''
 
         # Interpolate the filter response
-        interpolated_filter_values = np.interp(wavelength.value, self.filter_wavelength, self.filter)
-        
+        interpolate = interp1d(self.filter_wavelength, self.filter_transmission,kind='cubic',fill_value=0.0,bounds_error=False)
+        self.interpolated_filter_values = interpolate(wavelength)/100 
         # Multiply the normalized spectrum by the interpolated filter values
-        convolved_spectrum = normalized_spectrum*interpolated_filter_values
+        filtered_spectrum = normalized_spectrum*self.interpolated_filter_values
         
-        return convolved_spectrum
+        
+        if plot==True:
+            fig,ax = plt.subplots(1, 1, figsize = (8, 6))
+            max = normalized_spectrum.max()
+            
+            ax.set_xlabel('Wavelength ($\AA$)')
+            ax.set_ylabel('Flux Density (photons $s^{-1} cm^{-2} \AA^{1})$')
+            ax.plot(wavelength, normalized_spectrum,label='Photon Spectrum')
+            ax.plot(wavelength, self.interpolated_filter_values*max,label='Filter')
+            ax.plot(wavelength, filtered_spectrum, label= 'Filtered Spectrum')
+            plt.legend()
+            plt.show()
+             
+        return filtered_spectrum
     
 class Telescope:
     '''
@@ -213,21 +179,41 @@ class Telescope:
 class atmosphere:
     '''
     PURPOSE:
-        Define absorption due to atmospheric conditions
+        A class which defines absorption due to atmospheric conditions
+            and skyglow
         
     INPUTS:
-        quality: Either 'good' or 'bad' observing conditions
+        quality: 'default' reads in sky.csv and uses those parameters
     '''
     
     def __init__(self,quality):
-        if quality=='good':
-            self.atm = 0.8
-        if quality=='bad':
-            self.atm = 0.4
-    def get_atm(self):
-        atm = self.atm
-        return atm
-            
+        if quality=='default':
+            sky_table = pd.read_csv(notebook_directory+'/sky_data/sky.csv')
+            self.lam = sky_table['lam']*u.nm.to(u.AA)
+            self.flux = (np.array(sky_table['flux'])*u.photon/u.m**2/u.s/u.micron/
+                         u.arcsec**2).to(u.photon/u.cm**2/u.s/u.AA/u.arcsec**2)
+            self.trans = sky_table['trans']
+    
+    def absorption(self,wavelength,spectrum):
+        '''
+        multiply spectrum times absorption of atmosphere
+    
+        INPUTS:
+        wavelength: wavelength array of spectrum
+        spectrum: spectrum of object
+        RETURNS: 
+        absorbed_spectrum
+        '''
+        # Interpolate the filter response
+        interpolate = interp1d(self.lam, self.trans,kind='cubic',fill_value=0.0,bounds_error=False)
+        self.interpolated_absorption_values = interpolate(wavelength) 
+        # Multiply the normalized spectrum by the interpolated filter values
+        absorbed_spectrum = spectrum*self.interpolated_absorption_values
+        return absorbed_spectrum
+    
+        
+        
+    
 class detector:
     def __init__(self,camera_cost):
         self.camera_cost = camera_cost
@@ -250,21 +236,21 @@ class Counts_Equation:
         filter: filter class with bandpass argument
         telescope: telescope class with diameter argument
         atmosphere: class atmosphere with quality argument
-        detector: class detector with camera_cost argument
-        
+        detector: class detector with camera_cost argument  
     '''
     def __init__(self,SED_model,filter,telescope,atmosphere,detector):
         
         self.wavelength,self.photon_spectrum = SED_model.photon_spectrum()
         self.bandpass = BandPass(filter)
-        self.convolved_spectrum = self.bandpass.convolve_SED(self.wavelength, self.photon_spectrum)
-        
-        
+        self.atmosphere = atmosphere
         self.area = telescope.calc_area()
         self.mirror = telescope.mirror()
-
-        self.atm = atmosphere.get_atm()
         self.QE = detector.detector_efficiency()
+        
+        self.filtered_spectrum = self.bandpass.filter_SED(self.wavelength, self.photon_spectrum)
+        self.absorbed_spectrum = self.atmosphere.absorption(self.wavelength,self.filtered_spectrum)
+        
+
         
     def get_counts(self):
         '''
@@ -278,57 +264,38 @@ class Counts_Equation:
             counts, number in photons per second
         '''
         
-        adjusted_spectrum = self.convolved_spectrum*self.area*self.atm*self.mirror*self.QE
-        counts = simps(adjusted_spectrum, wavelength)
+        adjusted_spectrum = self.absorbed_spectrum*self.area*self.mirror*self.QE
+        counts = simps(adjusted_spectrum, self.wavelength)
+        print(np.round(counts,2),'photons per second')
         return counts
-
-
-
-# Initialize the SED class
-model = SED(mag = 20, temperature = 9700, temp_units = 'Kelvin', wave_start = 1, wave_stop = 10000, wave_units = 'Angstrom')
-
-# Create the spectrum
-wavelength,spectrum = model.photon_spectrum()
-
-# Initialize the BandPass class
-Vband = BandPass('V')
-
-# Convolve the spectrum with the filter response
-convolved_spectrum = Vband.convolve_SED(wavelength, spectrum)
-
-
-
-
-
-
-model_SED = SED(mag = 20, temperature = 9700, temp_units = 'Kelvin', wave_start = 1, wave_stop = 10000, wave_units = 'Angstrom')
-
-
-timstelescope = Telescope(60,'cm') #create telescope
-
-
-LasCruces = atmosphere('good') #create atmosphere conditions
-
-camera = detector('$$$') #create detector
-
-
-
-observation = Counts_Equation(model_SED,                              #initialize observation
-                              filter='V',telescope=timstelescope,
-                              atmosphere=LasCruces,detector=camera)
-
-counts = observation.get_counts()
-
-print(np.round(counts,2),'photons per second')
-
-# Plot the convolved spectrum
-plt.plot(wavelength,spectrum,label='photon spectrum')
-plt.plot(Vband.filter_wavelength,Vband.filter*.00001,label='filter bandpass')
-plt.plot(wavelength,convolved_spectrum,label='convolved spectrum')
-
-plt.legend()
-plt.show()
-
-
-
-
+    
+    
+class Signal_to_Noise:
+    
+    def __init__(self,Counts_Equation,SNR):
+        self.counts = Counts_Equation.get_counts()
+        self.SNR = SNR
+        
+    def calc_exptime(self,plot=False):
+        def snr_eq(t):
+            return (self.counts*t)/np.sqrt(self.counts*t)-self.SNR 
+        roots = fsolve(snr_eq, 0.1)
+        time = roots[0]
+        print(' ')
+        print(str(time),'seconds for SNR='+str(self.SNR))
+        
+        
+        if plot==True:  
+            t = np.linspace(0,time*2,1000)
+            with warnings.catch_warnings():            
+                warnings.filterwarnings("ignore", category=RuntimeWarning)  
+                snr_val = snr_eq(t)+self.SNR
+            plt.plot(t,snr_val)
+            plt.axvline(time,color='red',linestyle='dashed',label=str(np.round(time,2))+' seconds')
+            plt.axhline(self.SNR,color='black',linestyle='dashed',label='SNR='+str(self.SNR))
+            plt.xlabel('time (s)')
+            plt.ylabel('SNR')
+            plt.legend()
+            plt.show()
+        
+        return time
