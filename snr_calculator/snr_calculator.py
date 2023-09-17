@@ -277,6 +277,39 @@ def snr_(mag,wavelengths,time):
     return snr
     
 
+def exp_time_from_snr(snr, sed, transmission, wavelengths, tele_area=(np.pi*(3.5/2*u.m)**2),
+                      bg_area=np.pi, platescale=2, read_noise=.2):
+    """Calculates the the exposure time needed to get the required SNR
+
+            Uses the signal equation, along with the given transmission curve, to calculate
+            the monochromatic signal at the given wavelengths. Wavelengths and sed should
+            have units using astropy.units.
+
+            Parameters:
+                snr (float): desired SNR of the observation
+                sed (np.array): numpy array of the same size as wavelengths which contains
+                                the flux at the given wavelengths
+                transmission (np.array): transmission spectrum (combined to include any relevant factors
+                                         including atmosphere, detector effeciency, etc.)
+                wavelengths (np.array): numpy array of wavelengths corresponding to the SED
+                tele_area (Quantity): telescope area; defaults to the area of a telescope with diameter
+                                      3.5 m; can use 1 (with no units) to receive signal per area
+                bg_area (float): area (in square arcseconds) of the aperature over which the stars light
+                                 will be measured
+                platescale (float): platescale of the detector
+                read_noise (float): predicted read noise from the detector
+
+            Returns:
+                Quantity: exposure time needed to achieve the given SNR
+        """
+    S = calc_monochrome_signal(sed, transmission, area=tele_area, exp_time=1)
+    B = np.ones(wavelengths.shape) / u.s  # Currently using background = 1 photon per square arcsec, will modify later
+    a = -S**2
+    b = snr**2 * (S + bg_area * B)
+    c = snr**2 * platescale*bg_area*read_noise
+    exp_time = (-b - np.sqrt(b**2 - 4*a*c)) / (2*a)
+    return exp_time
+
 
 def main():
     wavelengths = 5500 * u.Angstrom
