@@ -24,12 +24,15 @@ class SED:
         temperature: temperature of source
     '''
     # Initialize the class
-    def __init__(self, mag, temperature):
+    def __init__(self, mag=None, temperature=9700,test_spectrum=None):
   
         # Define variables
         self.mag = mag
         self.temperature = temperature*u.K
-
+        if (test_spectrum==None) or (test_spectrum==False):
+            self.test_spectrum=False
+        if test_spectrum==True:   
+            self.test_spectrum = True
     def blackbody_spectrum(self):
 
         '''
@@ -58,7 +61,7 @@ class SED:
         self.model_spectrum = blackbody_model(self.wavelength)
         
         # Normalize the spectrum
-        ref_spectrum = BlackBody(temperature = 9_700*u.K, scale = 1*u.erg/u.s/u.cm**2/u.sr/u.AA)
+        ref_spectrum = BlackBody(temperature = 9700*u.K, scale = 1*u.erg/u.s/u.cm**2/u.sr/u.AA)
 
         # Normalize the spectrum
         normalize = (3.63e-9*u.erg/u.cm**2/u.s/u.AA)/(ref_spectrum(5500*u.AA)*u.sr) 
@@ -77,13 +80,17 @@ class SED:
         OUTPUTS:
             photon_spectrum, an array in units of photons per second per cm^2 per Angstrom
         '''
-                
-        with warnings.catch_warnings():            
-            warnings.filterwarnings("ignore", category=RuntimeWarning)          
-            wavelength,normalized_spectrum = SED.blackbody_spectrum(self)       
-            light_speed = c.c.to(u.cm/u.s)
-            h = c.h.to(u.erg*u.s)
-            photon_spectrum = normalized_spectrum*(wavelength*u.AA.to(u.cm)*u.cm)/(h*light_speed)
+        if self.test_spectrum==False:        
+            with warnings.catch_warnings():            
+                warnings.filterwarnings("ignore", category=RuntimeWarning)          
+                wavelength,normalized_spectrum = SED.blackbody_spectrum(self)       
+                light_speed = c.c.to(u.cm/u.s)
+                h = c.h.to(u.erg*u.s)
+                photon_spectrum = normalized_spectrum*(wavelength*u.AA.to(u.cm)*u.cm)/(h*light_speed)
+        
+        if self.test_spectrum==True:
+                wavelength = np.linspace(1, 15000, 100000)
+                photon_spectrum = np.full(100000, 0.1)
         
         # Create spectrum plot
         if plot==True:
@@ -100,7 +107,7 @@ class BandPass:
     PURPOSE: Create a class for bandpass
     
     INPUTS:
-        filter: filter used for observation, supported filter inputs are 'B','V','R','I'
+        filter: filter used for observation, supported filter inputs are 'B','V','R','I','test
     '''
     # Initialize the bandpass class
     def __init__(self, filter):
@@ -130,7 +137,7 @@ class BandPass:
         '''
 
         # Interpolate the filter response
-        interpolate = interp1d(self.filter_wavelength, self.filter_transmission,kind='cubic',fill_value=0.0,bounds_error=False)
+        interpolate = interp1d(self.filter_wavelength, self.filter_transmission,fill_value=0.0,bounds_error=False)
         self.interpolated_filter_values = interpolate(wavelength)/100 
         # Multiply the normalized spectrum by the interpolated filter values
         filtered_spectrum = normalized_spectrum*self.interpolated_filter_values
@@ -175,7 +182,7 @@ class Telescope:
             self.focal_length = focal_length*u.m
             
     def calc_area(self):    
-        area = np.pi*(self.diameter/2)**2
+        area = (np.pi*(self.diameter/2)**2).to(u.cm**2)
         return area
    
     def mirror(self):
@@ -189,18 +196,22 @@ class atmosphere:
             and skyglow
         
     INPUTS:
-        quality: 'default' reads in sky.csv and uses those parameters
+        quality: 'default' reads in sky.csv and uses those parameters. 'test' has sky flux of 
+                  100 photons/m^2/s/micron/arcsec^2 in all wavelengths and transmission of 1
         seeing: value in arcsec
     '''
     
     def __init__(self,quality,seeing):
         if quality=='default':
             sky_table = pd.read_csv(notebook_directory+'/sky_data/sky.csv')
-            self.lam = sky_table['lam']*u.nm.to(u.AA)
-            self.flux = (np.array(sky_table['flux'])*u.photon/u.m**2/u.s/u.micron/
-                         u.arcsec**2).to(u.photon/u.cm**2/u.s/u.AA/u.arcsec**2)
-            self.trans = sky_table['trans']
-            self.seeing = seeing*u.arcsec
+        if quality=='test':
+            sky_table = pd.read_csv(notebook_directory+'/sky_data/test.csv')
+        
+        self.lam = sky_table['lam']*u.nm.to(u.AA)
+        self.flux = (np.array(sky_table['flux'])*u.photon/u.m**2/u.s/u.micron/
+                     u.arcsec**2).to(u.photon/u.cm**2/u.s/u.AA/u.arcsec**2)
+        self.trans = sky_table['trans']
+        self.seeing = seeing*u.arcsec
             
     def absorption(self,wavelength,spectrum):
         '''
@@ -223,19 +234,27 @@ class atmosphere:
         
     
 class detector:
-    def __init__(self,camera_cost):
-        self.camera_cost = camera_cost  
-        if self.camera_cost == '$$$':
-            self.QE = 0.5
-            self.resolution = np.array([1000,1000]) #pixels
-            self.px_size = 9*u.micron
-            self.read_noise = 5 #e/px
-        if self.camera_cost == '$':
-            self.QE = 0.08
-            self.resolution = np.array([500,500])
-            self.px_size = 15*u.micron
-            self.read_noise = 20 #e/px
-            
+    '''
+    PURPOSE:
+        creates a class representing detector and associated properties
+        
+    INPUTS:
+        QE: quantum efficiency of detector from 0 to 1
+        px_size: pixel size in microns
+        read_noise: read noise in e-
+        instrument_type: type of instrument. either "photometry" or "spectroscopy"
+        dispersion: dispersion of spectrograph in angstroms per pixel
+    '''
+    def __init__(self,QE,px_size,read_noise,instrument_type='photometry',dispersion=None):
+
+        self.QE = QE
+        self.px_size = px_size*u.micron
+        self.read_noise = read_noise #e/px
+        if instrument_type == 'photometry':
+            self.instrument_type = 'phot'
+        if instrument_type == 'spectroscopy':
+            self.instrument_type = 'spec'
+            self.dispersion = dispersion
 class Observation:
     '''
     PURPOSE:
@@ -260,20 +279,25 @@ class Observation:
         self.seeing = atmosphere.seeing
         self.filtered_spectrum = self.bandpass.filter_SED(self.wavelength, self.photon_spectrum)
         self.absorbed_spectrum = self.atmosphere.absorption(self.wavelength,self.filtered_spectrum)
+        self.adjusted_spectrum = self.absorbed_spectrum*self.area*self.mirror*self.QE
         
-        self.px_scale = np.arctan(detector.px_size.to(u.mm)
-                               /telescope.focal_length.to(u.mm)).to(u.arcsec)**2 #arcsecond^2 per pixel
-
-        self.N_px = (np.pi*self.seeing**2)/self.px_scale
-
+        self.px_scale = np.arctan(detector.px_size.to(u.mm)/telescope.focal_length.to(u.mm)).to(u.arcsec) #arcsecond per pixel
         
-        self.filtered_skyglow = self.bandpass.filter_SED(atmosphere.lam, atmosphere.flux)*u.arcsec**2/self.px_scale*self.N_px*self.area
-        self.total_skyglow = simps(self.filtered_skyglow, atmosphere.lam) #photons per second
+        
+        self.filtered_skyglow = self.bandpass.filter_SED(atmosphere.lam, atmosphere.flux)
+        
+        if detector.instrument_type=='phot':
+            self.N_px = (np.pi*self.seeing**2)/self.px_scale**2 #number of pixels due to scale and seeing
+            self.skyglow_area = self.filtered_skyglow*(self.px_scale**2*self.N_px*self.area) 
+            self.total_skyglow = simps(self.skyglow_area, atmosphere.lam) #photons per second
+            
+        if detector.instrument_type=='spec':
+            self.skyglow_area = self.filtered_skyglow*(self.px_scale**2*self.area)
         
     def get_counts(self):
         '''
         PURPOSE:
-            calculate the expected counts per second given the class's attributes
+            calculate the expected signal counts per second given the class's attributes
         
         INPUTS:
             none
@@ -282,8 +306,7 @@ class Observation:
             counts, number in photons per second
         '''
         
-        adjusted_spectrum = self.absorbed_spectrum*self.area*self.mirror*self.QE
-        counts = simps(adjusted_spectrum, self.wavelength)
+        counts = simps(self.adjusted_spectrum, self.wavelength)
         print(np.round(counts,2),'photons per second')
         return counts
     
@@ -295,13 +318,35 @@ class Signal_to_Noise:
     INPUTS: 
         Counts_Equation, class with all observing factors used to calculate signal
         SNR: desired SNR
+        wavelength: wavelength for spectroscopic observation in Angstroms
     '''
-    def __init__(self,Counts_Equation,SNR):
-        self.counts = Counts_Equation.get_counts()
-        self.SNR = SNR
-        self.skyglow = Counts_Equation.total_skyglow
-        self.N_px = Counts_Equation.N_px
+    def __init__(self,Counts_Equation,SNR,wavelength=None):
+        self.SNR = SNR  
         self.sigma_rn = Counts_Equation.detector.read_noise
+        
+        if Counts_Equation.detector.instrument_type == 'phot': 
+            self.counts = Counts_Equation.get_counts()
+            self.N_px = Counts_Equation.N_px
+            self.skyglow = Counts_Equation.total_skyglow
+            
+        if Counts_Equation.detector.instrument_type == 'spec':       
+            self.wavelength = wavelength
+            self.wavelength_array = Counts_Equation.wavelength
+            self.dispersion = Counts_Equation.detector.dispersion
+            self.spectrum = Counts_Equation.adjusted_spectrum
+            
+            index = np.where((self.wavelength_array>=self.wavelength-self.dispersion/2)&(self.wavelength_array<=self.wavelength+self.dispersion/2))
+            self.counts = simps(self.spectrum[index],self.wavelength_array[index])
+            self.N_px = 1
+            self.skyglow_area = Counts_Equation.skyglow_area
+            
+            index2 = np.where((Counts_Equation.atmosphere.lam>=self.wavelength-self.dispersion/2)&(Counts_Equation.atmosphere.lam<=self.wavelength+self.dispersion/2))
+            
+            self.index2 = index2
+            
+            self.skyglow = simps(self.skyglow_area[index2], np.array(Counts_Equation.atmosphere.lam)[index2]) #photons per second
+            
+
         
     def calc_exptime(self,plot=False):
         '''
@@ -319,7 +364,7 @@ class Signal_to_Noise:
         roots = fsolve(snr_eq, 0.1)
         time = roots[0]
         print(' ')
-        print(str(time),'seconds for SNR='+str(self.SNR))
+        print(str(np.round(time,2)),'seconds for SNR='+str(self.SNR))
         
         
         if plot==True:  
@@ -336,3 +381,33 @@ class Signal_to_Noise:
             plt.show()
         
         return time
+    
+    def calc_SNR(self,time,plot=False):
+        '''
+        PURPOSE:
+            calculates SNR at given time 
+            
+        INPUTS:
+            time: time in seconds
+            plot: True or False
+        RETURNS:
+            snr: signal to noise at given exposure time
+        '''
+        def snr_t_eq(t):
+                return (self.counts*t)/np.sqrt(self.counts*t+self.skyglow*t+self.N_px*self.sigma_rn**2)
+            
+        snr = snr_t_eq(time)
+        
+        if plot==True:  
+            t = np.linspace(0,time,1000)
+            with warnings.catch_warnings():            
+                warnings.filterwarnings("ignore", category=RuntimeWarning)  
+                snr_val = snr_t_eq(t)
+            plt.plot(t,snr_val)
+            plt.axvline(time,color='red',linestyle='dashed',label=str(np.round(time,2))+' seconds')
+            plt.axhline(snr,color='black',linestyle='dashed',label='SNR='+str(snr))
+            plt.xlabel('time (s)')
+            plt.ylabel('SNR')
+            plt.legend()
+            plt.show()
+        return snr
