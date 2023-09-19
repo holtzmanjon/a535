@@ -231,16 +231,15 @@ def calc_monochrome_signal(sed, transmission, area=(np.pi*(3.5/2*u.m)**2), exp_t
 
     return monochrome_signal
 
-def snr_(mag,wavelengths,time):
+def exp_snr_from_time(sed, transmission, wavelengths,time,tele_area=(np.pi*(3.5/2*u.m)**2),
+                      bg_area=np.pi, platescale=0.5, read_noise=5):
     """Calculates the snr of a given object and exposure time
-        !!fix later
 
         Uses the signal equation, along with the given transmission curve, to calculate
         the monochromatic snr at the given wavelengths. Wavelengths and sed should
         have units using astropy.units.
 
         Parameters:
-            snr (float): desired SNR of the observation
             sed (np.array): numpy array of the same size as wavelengths which contains
                             the flux at the given wavelengths
             transmission (np.array): transmission spectrum (combined to include any relevant factors
@@ -250,14 +249,12 @@ def snr_(mag,wavelengths,time):
                                   3.5 m; can use 1 (with no units) to receive signal per area
             bg_area (float): area (in square arcseconds) of the aperature over which the stars light
                              will be measured
-            platescale (float): platescale of the detector
-            read_noise (float): predicted read noise from the detector
+            platescale (float): platescale of the detector in arcsecon/pixel
+            read_noise (float): predicted read noise from the detector in e/pixel
 
 
         Returns:
-            np.array: numpy array of the same length as wavelengths of predicted photon counts
-                      at each wavelength
-
+            float: snr value 
     """
     F0=3.63e-9 #ergs/cm2/s/ang STMAG at 5500
     h=6.626176e-27 #ergs s
@@ -267,19 +264,22 @@ def snr_(mag,wavelengths,time):
     instrument_trans=instrument_transmission(wavelengths)
     filter_trans = filter_transmission(wavelengths)
     detect_respon = detector_response(wavelengths)
-    F=F0*10**(-0.4*mag)
-    integral=quad(F,wavelengths[0],wavelengths[-1])
-    signal=tele_area*time*integral
+    #F=F0*10**(-0.4*mag)
+    #integral=quad(F,wavelengths[0],wavelengths[-1])
+    
+    S = calc_monochrome_signal(sed, transmission, area=(np.pi*(3.5/2*u.m)**2), exp_time=time)
+    #not sure if i should calculate a given S or intgrate 
+    #signal=tele_area*time*integral
     aperature=1 #1 " seeing radius
     platescale=0.5 # 0.5"/pixel
-    m=-2.5*np.log10(signal)
+    m=-2.5*np.log10(S)
 
     A=np.pi*aperature**2
     Npix=aperature/platescale
     background_area=aperature
     surf_bright=1
-    rn_sigma=5 #5 e/pixel
-    snr=signal/np.sqrt(signal+background_area*surf_bright+rn_sigma*Npix)
+    read_noise=5 #5 e/pixel
+    snr=S/np.sqrt(S+background_area*surf_bright+read_noise*Npix)
     
     return snr
     
@@ -328,9 +328,11 @@ def main():
     area = tele_area(name='rad0.3')
     photon_sed = generate_sed(wavelengths, V_mag)
     signal = calc_monochrome_signal(photon_sed, transmission, area=area, exp_time=(1*u.s))
-    print(signal)
+    print(signal, 'signal')
     print(signal*850*u.Angstrom)
-
+    print(exp_time_from_snr(100,photon_sed,transmission,wavelengths), 'exposure time from snr')
+    #exp_snr_from_time
+    #print(exp_snr_from_time(100,photon_sed,transmission,wavelengths), 'snr from time')
 
 if __name__ == "__main__":
     main()
