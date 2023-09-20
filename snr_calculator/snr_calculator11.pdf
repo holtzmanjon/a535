@@ -330,9 +330,9 @@ def main():
     signal = calc_monochrome_signal(photon_sed, transmission, area=area, exp_time=(1*u.s))
     print(signal, 'signal')
     print(signal*850*u.Angstrom)
-    #print(exp_time_from_snr(100,signal,transmission,wavelengths), 'exposure time from snr')
+    print(exp_time_from_snr(100,photon_sed,transmission,wavelengths), 'exposure time from snr')
     #exp_snr_from_time
-    #print(exp_snr_from_time(100,photon_sed*u.s,transmission,wavelengths), 'snr from time')
+    #print(exp_snr_from_time(100,photon_sed,transmission,wavelengths), 'snr from time')
 
 if __name__ == "__main__":
     main()
