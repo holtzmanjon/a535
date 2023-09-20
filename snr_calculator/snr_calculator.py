@@ -227,7 +227,11 @@ def calc_monochrome_signal(sed, transmission, area=(np.pi*(3.5/2*u.m)**2), exp_t
                       at each wavelength
 
     """
-    monochrome_signal = (area * exp_time * sed * transmission).to(1/u.Angstrom)
+    monochrome_signal = (area * exp_time * sed * transmission)
+    try:
+        monochrome_signal = monochrome_signal.to(1/u.Angstrom)
+    except astropy.units.core.UnitConversionError:
+        monochrome_signal = monochrome_signal.to(1 / (u.Angstrom * u.s))
 
     return monochrome_signal
 
@@ -285,7 +289,7 @@ def exp_snr_from_time(sed, transmission, wavelengths,time,tele_area=(np.pi*(3.5/
     
 
 def exp_time_from_snr(snr, sed, transmission, wavelengths, tele_area=(np.pi*(3.5/2*u.m)**2),
-                      bg_area=np.pi, platescale=2, read_noise=.2):
+                      bg_area=np.pi, platescale=2, read_noise=.2, monochrome=True):
     """Calculates the the exposure time needed to get the required SNR
 
             Uses the signal equation, along with the given transmission curve, to calculate
@@ -305,16 +309,29 @@ def exp_time_from_snr(snr, sed, transmission, wavelengths, tele_area=(np.pi*(3.5
                                  will be measured
                 platescale (float): platescale of the detector
                 read_noise (float): predicted read noise from the detector
+                monochrome (bool): if True, calculates assuming a monochromatic SNR
 
             Returns:
                 Quantity: exposure time needed to achieve the given SNR
         """
-    S = calc_monochrome_signal(sed, transmission, area=tele_area, exp_time=1)
-    B = np.ones(wavelengths.shape) / u.s  # Currently using background = 1 photon per square arcsec, will modify later
-    a = -S**2
-    b = snr**2 * (S + bg_area * B)
-    c = snr**2 * platescale*bg_area*read_noise
-    exp_time = (-b - np.sqrt(b**2 - 4*a*c)) / (2*a)
+    if monochrome:
+        S = calc_monochrome_signal(sed, transmission, area=tele_area, exp_time=1)
+        B = np.ones(wavelengths.shape) / (u.s * u.Angstrom)  # Currently using background = 1 photon per square arcsec, will modify later
+        a = -S ** 2
+        b = snr ** 2 * (S + bg_area * B)
+        c = snr ** 2 * platescale * bg_area * read_noise
+        exp_time = (-b - np.sqrt(b ** 2 - 4 * a * c)) / (2 * a)
+    else:
+        S_monochrome = calc_monochrome_signal(sed, transmission, area=tele_area, exp_time=1)
+        S = 0 / u.s
+        for i in range(len(S_monochrome)-1):
+            delta_lambda = wavelengths[i + 1] - wavelengths[i]
+            S += delta_lambda * S_monochrome[i]
+        B = np.ones(wavelengths.shape) / (u.s)  # Currently using background = 1 photon per square arcsec, will modify later
+        a = -S**2
+        b = snr**2 * (S + bg_area * B)
+        c = snr**2 * platescale*bg_area*read_noise
+        exp_time = (-b - np.sqrt(b**2 - 4*a*c)) / (2*a)
     return exp_time
 
 
