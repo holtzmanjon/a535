@@ -36,6 +36,7 @@ def generate_sed(wavelengths, mag, spec_type='bb5500'):
 
     """
     sed = None
+    sed = None
     planet='fagk81d266.dat.txt'  
     header_row = 'wave, flux, extra 3\n'    
     # Open the file for reading
@@ -46,19 +47,20 @@ def generate_sed(wavelengths, mag, spec_type='bb5500'):
         updated_content = header_row + existing_content
         with open(planet, 'w') as file:
             file.write(updated_content)
-        print("New row/header added successfully.")
+        print("file updated with header")
     else:
-        print("New row/header already exists in the file.")
+        print("")
     star = pd.read_csv(planet, delimiter='\s+', skiprows=1, header=None, names=['wave', 'flux', 'extra'])
-    # Print the first few rows to verify the data
-    print(star.head())
-    
-    # Extract the 'wave' column as you did before
+    #print(star.head())    
     wave = star['wave'].to_numpy()
-    flux=star['flux'].to_numpy() #flux ( ergs/cm/cm/s/A * 10**16 )
+    flux=star['flux'].to_numpy() #flux ( ergs/cm/cm/s/A * 10**16 ) maybe better to call specific intensity
     interpolated_flux = interp1d(wave, flux, kind='linear', fill_value="extrapolate")
-    desired_flux=interpolated_flux(wavelengths)
-    sed = trapz(desired_flux, x=wavelengths)
+    desired_flux=interpolated_flux(wavelengths) #flux density need to integrate over wavelength
+    scaled_flux=desired_flux*10**(-0.4 * mag)
+    sed1 = trapz(scaled_flux, x=wavelengths)# ergs/cm/cm/s  FLUXlamda
+    #scale=sed1** 10**(-0.4 * mag)
+    energy = const.c * const.h / wavelengths
+    sed = sed1 / energy
     if 'bb' in spec_type:
         temp = float(spec_type[2:]) * u.K
         bb = models.BlackBody(temperature=temp, scale=1*u.J*u.m**-2/u.s/u.micron/u.sr)
