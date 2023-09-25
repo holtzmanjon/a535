@@ -10,8 +10,9 @@ from astropy import constants as const
 import matplotlib.pyplot as plt
 import scipy
 from scipy import stats
-from scipy.integrate import quad
-
+from scipy.integrate import trapz
+from scipy.interpolate import interp1d
+import pandas as pd
 
 def generate_sed(wavelengths, mag, spec_type='bb5500'):
     """Generates the spectral energy distribution of a given type at the given wavelengths
@@ -35,6 +36,29 @@ def generate_sed(wavelengths, mag, spec_type='bb5500'):
 
     """
     sed = None
+    planet='fagk81d266.dat.txt'  
+    header_row = 'wave, flux, extra 3\n'    
+    # Open the file for reading
+    with open(planet, 'r') as file:
+        # Read the existing content
+        existing_content = file.read()  
+    if header_row not in existing_content:
+        updated_content = header_row + existing_content
+        with open(planet, 'w') as file:
+            file.write(updated_content)
+        print("New row/header added successfully.")
+    else:
+        print("New row/header already exists in the file.")
+    star = pd.read_csv(planet, delimiter='\s+', skiprows=1, header=None, names=['wave', 'flux', 'extra'])
+    # Print the first few rows to verify the data
+    print(star.head())
+    
+    # Extract the 'wave' column as you did before
+    wave = star['wave'].to_numpy()
+    flux=star['flux'].to_numpy() #flux ( ergs/cm/cm/s/A * 10**16 )
+    interpolated_flux = interp1d(wave, flux, kind='linear', fill_value="extrapolate")
+    desired_flux=interpolated_flux(wavelengths)
+    sed = trapz(desired_flux, x=wavelengths)
     if 'bb' in spec_type:
         temp = float(spec_type[2:]) * u.K
         bb = models.BlackBody(temperature=temp, scale=1*u.J*u.m**-2/u.s/u.micron/u.sr)
