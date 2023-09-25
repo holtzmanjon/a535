@@ -259,6 +259,34 @@ def calc_monochrome_signal(sed, transmission, area=(np.pi*(3.5/2*u.m)**2), exp_t
 
     return monochrome_signal
 
+
+def atmos_emission(wavelengths):
+    """Calculate emission from the atmosphere
+
+            Uses an ESO sky model to calculate the emission due to the atmosphere at the given
+            wavelengths. Currently only supports one model of atmospheric emission. Emission
+            is given per square arcsec.
+
+    Args:
+        wavelengths: wavelengths at which to calculate the background emission from the atmosphere
+
+    Returns:
+        np.array: array with astropy units of the sky emission at the given wavelengths
+    """
+    lambdas = []
+    fluxes = []
+    with open('sky_0.0.csv', 'r') as f:
+        lines = f.readlines()
+        for line in lines:
+            data = line.split(',')
+            lambdas.append(data[0])
+            fluxes.append(data[1])
+    lambdas = np.array(lambdas) * u.nm
+    fluxes = np.array(fluxes) / u.m**2 / u.s / u.micron
+    new_fluxes = np.interp(wavelengths, lambdas, fluxes)
+    return new_fluxes
+
+
 def exp_snr_from_time(sed, transmission, wavelengths,time,tele_area=(np.pi*(3.5/2*u.m)**2),
                       bg_area=np.pi, platescale=0.5, read_noise=5):
     """Calculates the snr of a given object and exposure time
@@ -340,22 +368,24 @@ def exp_time_from_snr(snr, sed, transmission, wavelengths, tele_area=(np.pi*(3.5
         """
     if monochrome:
         S = calc_monochrome_signal(sed, transmission, area=tele_area, exp_time=1)
-        B = np.ones(wavelengths.shape) / (u.s * u.Angstrom)  # Currently using background = 1 photon per square arcsec, will modify later
+        B = atmos_emission(wavelengths) * tele_area
         a = -S ** 2
         b = snr ** 2 * (S + bg_area * B)
         c = snr ** 2 * platescale * bg_area * read_noise
-        exp_time = (-b - np.sqrt(b ** 2 - 4 * a * c)) / (2 * a)
+        exp_time = ((-b - np.sqrt(b ** 2 - 4 * a * c)) / (2 * a)).to(u.s)
     else:
         S_monochrome = calc_monochrome_signal(sed, transmission, area=tele_area, exp_time=1)
         S = 0 / u.s
+        B_monochrome = atmos_emission(wavelengths) * tele_area
+        B = 0 / u.s
         for i in range(len(S_monochrome)-1):
             delta_lambda = wavelengths[i + 1] - wavelengths[i]
             S += delta_lambda * S_monochrome[i]
-        B = np.ones(wavelengths.shape) / (u.s)  # Currently using background = 1 photon per square arcsec, will modify later
+            B += delta_lambda * S_monochrome[i]
         a = -S**2
         b = snr**2 * (S + bg_area * B)
         c = snr**2 * platescale*bg_area*read_noise
-        exp_time = (-b - np.sqrt(b**2 - 4*a*c)) / (2*a)
+        exp_time = ((-b - np.sqrt(b**2 - 4*a*c)) / (2*a)).to(u.s)
     return exp_time
 
 
