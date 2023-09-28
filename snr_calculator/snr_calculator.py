@@ -29,7 +29,6 @@ def generate_sed(wavelengths, mag, spec_type='bb5500'):
             spec_type (string): the type of SED to be generated; defaults to a blackbody with temperature
                                 5500K
 
-
         Returns:
             np.array: numpy array of the same length as wavelengths with photon flux distributed
                       based on spec_type
@@ -289,13 +288,14 @@ def atmos_emission(wavelengths, type='eso', area=(np.pi*(3.5/2*u.m)**2)):
         fluxes = []
         with open('sky_0.0.csv', 'r') as f:
             lines = f.readlines()
-            for line in lines:
+            for line in lines[1:]:
                 data = line.split(',')
-                lambdas.append(data[0])
-                fluxes.append(data[1])
+                lambdas.append(float(data[0]))
+                fluxes.append(float(data[1]))
         lambdas = np.array(lambdas) * u.nm
         fluxes = np.array(fluxes) / u.m**2 / u.s / u.micron
         new_fluxes = np.interp(wavelengths, lambdas, fluxes) * area
+        plt.plot(lambdas,fluxes)
     elif 'instmag' in type:
         inst_mag = float(type[7:])
         bg = 10**(-inst_mag/2.5) / u.s  # photons per second per square arcsec
@@ -343,7 +343,7 @@ def exp_snr_from_time(sed, transmission, wavelengths,time,tele_area=(np.pi*(3.5/
     #F=F0*10**(-0.4*mag)
     #integral=quad(F,wavelengths[0],wavelengths[-1])
     
-    S = calc_monochrome_signal(sed, transmission, area=(np.pi*(3.5/2*u.m)**2), exp_time=time)
+    S = calc_monochrome_signal(sed, transmission, area=(np.pi*(3.5/2*u.m)**2), exp_time=time, use_area=False)
     #not sure if i should calculate a given S or intgrate 
     #signal=tele_area*time*integral
     aperature=1 #1 " seeing radius
@@ -394,7 +394,7 @@ def exp_time_from_snr(snr, sed, transmission, wavelengths, B_monochrome, tele_ar
         c = snr ** 2 * platescale * bg_area * read_noise
         exp_time = ((-b - np.sqrt(b ** 2 - 4 * a * c)) / (2 * a)).to(u.s)
     else:
-        S_monochrome = calc_monochrome_signal(sed, transmission, area=tele_area, exp_time=1)
+        S_monochrome = calc_monochrome_signal(sed, transmission, area=tele_area, exp_time=1,use_area=False)
         S = 0 / u.s
         B = 0 / u.s
         for i in range(len(S_monochrome)-1):
@@ -418,9 +418,9 @@ def main():
     area = tele_area(name='rad0.3')
     photon_sed = generate_sed(wavelengths, V_mag, spec_type='instmag-8.5')
     bg = atmos_emission(wavelengths, type='instmag-2.5')
-    #signal = calc_monochrome_signal(photon_sed, transmission, area=area, exp_time=(1))
-    #print(signal, 'signal')
-    #print(signal*850*u.Angstrom)
+    signal = calc_monochrome_signal(photon_sed, transmission, area=area, exp_time=(1), use_area=False)
+    print(signal, 'signal')
+    print(signal*850*u.Angstrom)
     print(exp_time_from_snr(100,photon_sed,transmission,wavelengths, bg, monochrome=False), 'exposure time from snr')
     #exp_snr_from_time
     #print(exp_snr_from_time(100,photon_sed*u.s,transmission,wavelengths), 'snr from time')
