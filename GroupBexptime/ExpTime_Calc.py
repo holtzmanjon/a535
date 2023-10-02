@@ -164,10 +164,10 @@ class Telescope:
     INPUTS:
         diameter: diameter of primary mirror
         units: units of length for diameter
-        
+        mirror: name of mirror file. Options are '1.0_mirror' and '0.8_mirror'
             
     '''
-    def __init__(self,diameter,diameter_units,focal_length,foc_len_units):
+    def __init__(self,diameter,diameter_units,focal_length,foc_len_units,mirror):
         if diameter_units == 'cm':
             self.diameter = diameter*u.cm
         if foc_len_units == 'cm':
@@ -180,14 +180,14 @@ class Telescope:
             self.diameter = diameter*u.m
         if foc_len_units == 'm':
             self.focal_length = focal_length*u.m
-            
+           
+        self.mirror = pd.read_csv(notebook_directory+'/mirror_data/'+str(mirror)+'_mirror.csv')
+        
     def calc_area(self):    
         area = (np.pi*(self.diameter/2)**2).to(u.cm**2)
         return area
    
-    def mirror(self):
-            mirror_efficiency = 1.0
-            return mirror_efficiency
+
     
 class atmosphere:
     '''
@@ -196,17 +196,17 @@ class atmosphere:
             and skyglow
         
     INPUTS:
-        quality: 'default' reads in sky.csv and uses those parameters. 'test' has sky flux of 
+        moon: Reads in sky table with corresponding moon illumination percent in 0.1 increments. 'test' has sky flux of 
                   100 photons/m^2/s/micron/arcsec^2 in all wavelengths and transmission of 1
         seeing: value in arcsec
     '''
     
-    def __init__(self,quality,seeing):
-        if quality=='default':
-            sky_table = pd.read_csv(notebook_directory+'/sky_data/sky.csv')
-        if quality=='test':
-            sky_table = pd.read_csv(notebook_directory+'/sky_data/test.csv')
+    def __init__(self,moon,seeing):
         
+        if moon=='test':
+            sky_table = pd.read_csv(notebook_directory+'/sky_data/test.csv')
+        else:
+            sky_table = pd.read_csv(notebook_directory+'/sky_data/sky_'+str(moon)+'.csv')
         self.lam = sky_table['lam']*u.nm.to(u.AA)
         self.flux = (np.array(sky_table['flux'])*u.photon/u.m**2/u.s/u.micron/
                      u.arcsec**2).to(u.photon/u.cm**2/u.s/u.AA/u.arcsec**2)
@@ -239,7 +239,7 @@ class detector:
         creates a class representing detector and associated properties
         
     INPUTS:
-        QE: quantum efficiency of detector from 0 to 1
+        QE: quantum efficiency of detector. Either 0.8 or 1.0
         px_size: pixel size in microns
         read_noise: read noise in e-
         instrument_type: type of instrument. either "photometry" or "spectroscopy"
@@ -247,7 +247,8 @@ class detector:
     '''
     def __init__(self,QE,px_size,read_noise,instrument_type='photometry',dispersion=None):
 
-        self.QE = QE
+        self.QE = pd.read_csv(notebook_directory+'/detector_data/'+str(QE)+'_QE.csv')
+        
         self.px_size = px_size*u.micron
         self.read_noise = read_noise #e/px
         if instrument_type == 'photometry':
@@ -261,11 +262,11 @@ class Observation:
         Creates a class representing observing conditions
         
     INPUTS:
-        model_SED: SED class with given temperature and magnitude
-        filter: filter class with bandpass argument
-        telescope: telescope class with diameter argument
-        atmosphere: class atmosphere with quality argument
-        detector: class detector with camera_cost argument  
+        model_SED
+        filter
+        telescope
+        atmosphere
+        detector  
     '''
     def __init__(self,SED_model,filter,telescope,atmosphere,detector):
         
@@ -273,19 +274,28 @@ class Observation:
         self.bandpass = BandPass(filter)
         self.atmosphere = atmosphere
         self.area = telescope.calc_area()
-        self.mirror = telescope.mirror()
+        
+        self.mirror_int = telescope.mirror
+        interpolate = interp1d(self.mirror_int['Wavelength'], self.mirror_int['Reflection'],kind='cubic',fill_value=0.0,bounds_error=False)
+        self.mirror = interpolate(self.wavelength) 
+        
         self.detector = detector
-        self.QE = detector.QE
+        self.QE_int = detector.QE
+        interpolate = interp1d(self.QE_int['Wavelength'], self.QE_int['Response'],kind='cubic',fill_value=0.0,bounds_error=False)
+        self.QE = interpolate(self.wavelength) 
+        
+        
         self.seeing = atmosphere.seeing
         self.filtered_spectrum = self.bandpass.filter_SED(self.wavelength, self.photon_spectrum)
         self.absorbed_spectrum = self.atmosphere.absorption(self.wavelength,self.filtered_spectrum)
         self.adjusted_spectrum = self.absorbed_spectrum*self.area*self.mirror*self.QE
+
         
         self.px_scale = np.arctan(detector.px_size.to(u.mm)/telescope.focal_length.to(u.mm)).to(u.arcsec) #arcsecond per pixel
         
         
         self.filtered_skyglow = self.bandpass.filter_SED(atmosphere.lam, atmosphere.flux)
-        
+
         if detector.instrument_type=='phot':
             self.N_px = (np.pi*self.seeing**2)/self.px_scale**2 #number of pixels due to scale and seeing
             self.skyglow_area = self.filtered_skyglow*(self.px_scale**2*self.N_px*self.area) 
