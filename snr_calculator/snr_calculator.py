@@ -52,8 +52,8 @@ def generate_sed(wavelengths, mag, spec_type='bb5500'):
             print("")
         star = pd.read_csv(planet, delimiter='\s+', skiprows=1, header=None, names=['wave', 'flux', 'extra'])
         #print(star.head())
-        wave = star['wave'].to_numpy()
-        flux=star['flux'].to_numpy() #flux ( ergs/cm/cm/s/A * 10**16 ) maybe better to call specific intensity
+        wave = star['wave'].to_numpy() * u.Angstrom
+        flux=star['flux'].to_numpy() * 10**16 * u.erg*u.cm**-2/u.s/u.Angstrom#flux ( ergs/cm/cm/s/A * 10**16 ) maybe better to call specific intensity
         interpolated_flux = interp1d(wave, flux, kind='linear', fill_value="extrapolate")
         desired_flux=interpolated_flux(wavelengths) #flux density need to integrate over wavelength
         scaled_flux=desired_flux*10**(-0.4 * mag)
@@ -332,9 +332,9 @@ def exp_snr_from_time(sed, transmission, wavelengths,time,tele_area=(np.pi*(3.5/
         Returns:
             float: snr value 
     """
-    F0=3.63e-9 #ergs/cm2/s/ang STMAG at 5500
-    h=6.626176e-27 #ergs s
-    c=2.99792458e10 #cm/s
+    F0=3.63e-9 *u.erg*u.cm**-2/u.s/u.Angstrom#ergs/cm2/s/ang STMAG at 5500
+    h=6.626176e-27 * u.erg/u.s#ergs s
+    c=2.99792458e10 * u.cm/u.s #cm/s
     atmos_trans=atmos_transmission(wavelengths)
     mirror_trans=mirror_transmission(wavelengths)
     instrument_trans=instrument_transmission(wavelengths)
