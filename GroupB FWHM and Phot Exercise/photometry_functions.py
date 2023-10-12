@@ -22,38 +22,54 @@ import astroalign as aa
 from astropy.wcs import WCS
 
 def median_combine(files):
+
     '''
-    Create median combined image from list of files
+    PURPOSE:
+            Create median combined image from list of files
+
     INPUTS:
-        files: list of directories to fits files. First image is used as reference for alignment
+            [files; list]:  List of directories to fits files. First image is used as reference for alignment
+
     OUTPUTS:
-        median_image: data for median combined image
-        header0: header of first reference image
+            [median_image]:  Data for median combined image
+                 [header0]:  Header of first reference image
     '''
+
+    # Print the files to be stacked
     print(len(files),'files to be stacked')
-    for i,file in enumerate(files):
-        if i==0:
-            #get data for first image to be used as reference
+
+    # Loop over the files
+    for i, file in enumerate(files):
+
+        # Check if first image
+        if i == 0:
+
+            # Get data for first image to be used as reference
             image0 = fits.open(file)
+
+            # Subtract bias
             data0 = bias_subtract(image0[0].data)
             header0 = image0[0].header
             stack_array = data0
         else:
             image = fits.open(file)
+
+            # Subtract bias
             data = bias_subtract(image[0].data)
             
-            #centroid align current image to first image
-            registered_image, footprint = aa.register(data, data0,fill_value='nan')
+            # Centroid align current image to first image
+            registered_image, footprint = aa.register(data, data0, fill_value = 'nan')
             
             #add current image to 3d stack
             stack_array = np.dstack((stack_array,registered_image))
    
-    #median combine 3d datacube
-    median_image = np.nanmedian(stack_array,axis=2) #median combine cube
+    # Median combine 3D datacube
+    median_image = np.nanmedian(stack_array, axis = 2) # Median combine cube
     
-    return median_image,header0
+    return median_image, header0
 
 def bias_subtract(data):
+
     '''
     PURPOSE:
             This function subtracts the bias from the data.
@@ -64,34 +80,47 @@ def bias_subtract(data):
     OUTPUTS:
             [new_data; np.array, float]: The bias subtracted data.
     '''
+
     # Make empty array to store new data
     new_data = np.empty(data.shape)
+
     # Loop over columns
-    for i in range(data.shape[1]):  # Loop over columns
+    for i in range(data.shape[1]):
+
         # Get overscan data
         overscan_data = data[-16:, i]
+
         # Get median of overscan data
         overscan_median = np.median(overscan_data)
-        new_data[:, i] = data[:, i] - overscan_median  # Subtract overscan_median from each column
+
+        # Subtract overscan_median from each column
+        new_data[:, i] = data[:, i] - overscan_median  
 
     return new_data
 
-def ap_phot(data,header,source_positions,standard_M,fwhm):
+def ap_phot(data, header, source_positions, standard_M, fwhm):
+
     '''
-    Aperture photometry function for standard stars.
+    PURPOSE:
+            Aperture photometry function for standard stars.
+
     INPUTS:
-        data: image data, 2d array
-        header: fits header for image
-        source_positions: xy positions of stars in pixel coordinates
-        standard_M: standard magnitude array corresponding to xy positions. set to None if you just want counts
-        fwhm: full width half maximum of stars. Radius is 2*fwhm and annulus is 2*fwhm+5 to 2*fwhm+10
+                 [data; np.array, float]:  Image data, 2d array
+                        [header; object]:  Fits header for image
+        [source_positions; tuple, float]:  xy positions of stars in pixel coordinates
+                     [standard_M; float]:  Standard magnitude array corresponding to xy positions. set to None if you just want counts
+                           [fwhm; float]:  Full width half maximum of stars. Radius is 2*fwhm and annulus is 2*fwhm+5 to 2*fwhm+10
+
     RETURNS:
-        phot_table: table of photometry including instrumental magnitudes and individual zeropoints
+             [phot_table; object, float]:  Table of photometry including instrumental magnitudes and individual zeropoints
     '''
+
+    # Define the median FWHM
     median_FWHM = 4.5
+
     # Make the apertures
-    aperture = CircularAperture(source_positions, r=2*median_FWHM)
-    annulus = CircularAnnulus(source_positions, r_in=2*median_FWHM+5, r_out=2*median_FWHM+10)
+    aperture = CircularAperture(source_positions, r = 2*median_FWHM)
+    annulus = CircularAnnulus(source_positions, r_in = 2*median_FWHM + 5, r_out = 2*median_FWHM + 10)
 
     # Store the apertures as a list
     phot_aper = [aperture, annulus]
@@ -114,18 +143,15 @@ def ap_phot(data,header,source_positions,standard_M,fwhm):
     # get counts per second
     phot_table['counts_sec'] = phot_table['bg_subtracted_counts']/header['EXPTIME']
     
-    if standard_M !=None:
+    if standard_M != None:
     
         # Calculate the instrumental magnitude
         phot_table['Instr_Mag'] = -2.5*np.log10(phot_table['bg_subtracted_counts']/header['EXPTIME'])
 
         # Calculate Zeropoint for each Star
         phot_table['zeropoint'] = standard_M-phot_table['Instr_Mag']
-
-    
     
     return phot_table
-
 
 def profiles(data, xcenter, ycenter):
 
@@ -135,8 +161,8 @@ def profiles(data, xcenter, ycenter):
 
     INPUTS:
             [data; np.array, float]:  The data to be bias subtracted.
-            [xcenter; float]: The x coordinate of the star.
-            [ycenter; float]: The y coordinate of the star.
+                   [xcenter; float]: The x coordinate of the star.
+                   [ycenter; float]: The y coordinate of the star.
 
     OUTPUTS:
             [x; np.array, float]: The horizontal profile.
@@ -192,7 +218,7 @@ def GetFWHM(data, sources, makeplot):
             This function calculates the FWHM of the data.
 
     INPUTS:
-               [data; np.array, float]:  The data to be bias subtracted.
+               [data; np.array, float]:  The data to be sigma clipped.
             [sources; np.array, float]:  The sources found in the data.
                       [makeplot; bool]:  Whether or not to make a plot.
 

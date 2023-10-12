@@ -26,7 +26,7 @@ class SED:
     '''
 
     # Initialize the class
-    def __init__(self, mag=None, temperature=9700,test_spectrum=None):
+    def __init__(self, mag=None, temperature=9_700, test_spectrum=None):
   
         # Define variables
         self.mag = mag
@@ -186,9 +186,11 @@ class BandPass:
         return filtered_spectrum
     
 class Telescope:
+    
     '''
     PURPOSE:
             Define telescope parameters to determine collecting area
+
     INPUTS:
             [diameter; float]:  Diameter of primary mirror
               [units; string]:  Units of length for diameter
