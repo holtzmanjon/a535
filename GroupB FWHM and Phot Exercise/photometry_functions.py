@@ -299,11 +299,54 @@ def GetFWHM(data, sources, makeplot):
     # Get the median FWHM 
     median_FWHM = np.median(FWHM)
 
+<<<<<<< Updated upstream
     # Make histogram and save
     plt.hist(FWHM, bins = 'auto')
     plt.axvline(median_FWHM, color = 'red', linestyle = 'dashed')
     plt.xlabel(str(len(FWHM)) + ' FWHMs calculated \n Median FWHM: ' + str(np.round(median_FWHM, 2)), size = 13)
     plt.savefig('FWHM median.pdf', bbox_inches = 'tight',facecolor = 'white')
     print('Median FWHM: ' + str(np.round(median_FWHM, 2)))
+=======
+                    # Make range for x axis
+                    xx = np.arange(0, len(vertical), 1)
+
+                    # Get the half max
+                    hor_half = ((horizontal - background).max())/2
+                    ver_half = ((vertical - background).max())/2                    
+
+                    # Make plot
+                    fig, (ax1,ax2,ax3) = plt.subplots(1, 3, figsize = (10, 4))
+                    
+                    ax1.imshow(self.data[int(ycenter) - 25:int(ycenter) + 25, int(xcenter) - 25:int(xcenter) + 25], norm = LogNorm(), origin = 'lower')
+                    ax1.axvline(25, color = 'red', linestyle = 'dashed', alpha = 0.8)
+                    ax1.axhline(25, color = 'red', linestyle = 'dashed', alpha = 0.8)
+                    
+                    ax2.plot(xx,vertical - background)
+                    ax2.hlines(ver_half, color = 'red', xmin = r1v, xmax = r2v)
+                    ax2.set_title('Vertical Cross Section')
+                    ax2.set_xlabel('FWHM= ' + str(np.round(fwhm_y, 2)))
+                    
+                    ax3.plot(xx,horizontal - background)
+                    ax3.set_title('Horizontal Cross Section')
+                    ax3.hlines(hor_half, color = 'red', xmin = r1h, xmax = r2h)
+                    ax3.set_title('Horizontal Cross Section')
+                    ax3.set_xlabel('FWHM= ' + str(np.round(fwhm_x, 2)))                
+                    plt.show()    
+                    #plt.savefig('FWHM example.pdf',bbox_inches='tight',facecolor='white')
+            except:
+                pass
+
+        # Get the median FWHM 
+        median_FWHM = np.median(FWHM)
+
+        # Make histogram and save
+        plt.hist(FWHM, bins = 'auto')
+        plt.axvline(median_FWHM, color = 'red', linestyle = 'dashed')
+        plt.xlabel(str(len(FWHM)) + ' FWHMs calculated \n Median FWHM: ' + str(np.round(median_FWHM, 2)), size = 13)
+        plt.show()
+        print('Median FWHM: ' + str(np.round(median_FWHM, 2)))
+        
+        return median_FWHM
+>>>>>>> Stashed changes
     
     return median_FWHM
