@@ -345,6 +345,7 @@ class FullWidth:
         seeing = median_fwhm*px_scale
         print('FWHM:',median_fwhm,'pixels')
         print('Seeing:',seeing)
+        
         return seeing
 
 class Photometry:
